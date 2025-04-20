@@ -392,6 +392,7 @@ titanic_transformer = Pipeline(steps=[
 
     ], verbose=True)
 
+cols_to_keep = ['Gender', 'Experience Level', 'Time Spent', 'OS', 'ISP', 'Age']
 customer_transformer = Pipeline(steps=[
     ('drop', CustomDropColumnsTransformer(column_list=cols_to_keep, action='keep')),
 ], verbose=True)

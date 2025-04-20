@@ -395,4 +395,231 @@ titanic_transformer = Pipeline(steps=[
 cols_to_keep = ['Gender', 'Experience Level', 'Time Spent', 'OS', 'ISP', 'Age']
 customer_transformer = Pipeline(steps=[
     ('drop', CustomDropColumnsTransformer(column_list=cols_to_keep, action='keep')),
+    ('gender', CustomMappingTransformer('Gender', {'Female': 0, 'Male': 1})),
+    ('experience', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high': 2})),
+    ('os', CustomOHETransformer('OS')),
+    ('isp', CustomOHETransformer('ISP')),
+    ('time spent', CustomTukeyTransformer('Time Spent', 'inner')),
 ], verbose=True)
+
+class CustomSigma3Transformer(BaseEstimator, TransformerMixin):
+    """
+    A transformer that applies 3-sigma clipping to a specified column in a pandas DataFrame.
+
+    This transformer follows the scikit-learn transformer interface and can be used in
+    a scikit-learn pipeline. It clips values in the target column to be within three standard
+    deviations from the mean.
+
+    Parameters
+    ----------
+    target_column : Hashable
+        The name of the column to apply 3-sigma clipping on.
+
+    Attributes
+    ----------
+    high_wall : Optional[float]
+        The upper bound for clipping, computed as mean + 3 * standard deviation.
+    low_wall : Optional[float]
+        The lower bound for clipping, computed as mean - 3 * standard deviation.
+    """
+    def __init__(self, target_column: str):
+        self.target_column = target_column
+        self.high_wall = None
+        self.low_wall = None
+    
+    def fit(self, X: pd.DataFrame, y=None):
+        """
+        Compute the high and low walls for 3-sigma clipping.
+
+        Parameters
+        ----------
+        X : pd.DataFrame
+            The input DataFrame.
+        y : None
+            Not used.
+
+        Returns
+        -------
+        self : CustomSigma3Transformer
+            The fitted transformer.
+        """
+        assert isinstance(X, pd.core.frame.DataFrame), f'expected Dataframe but got {type(X)} instead.'
+        assert self.target_column in X.columns.to_list(), f'unknown column {self.target_column}'
+        mean = X[self.target_column].mean()
+        std = X[self.target_column].std()
+        self.high_wall = mean + 3 * std
+        self.low_wall = mean - 3 * std
+        return self
+    
+    def transform(self, X: pd.DataFrame, y=None):
+        """
+        Apply 3-sigma clipping to the specified column in the input DataFrame.
+
+        Parameters
+        ----------
+        X : pd.DataFrame
+            The input DataFrame.
+        y : None
+            Not used.
+
+        Returns
+        -------
+        pd.DataFrame
+            A new DataFrame with the specified column clipped.
+        """
+        assert isinstance(X, pd.core.frame.DataFrame), f'expected Dataframe but got {type(X)} instead.'
+        assert self.target_column in X.columns.to_list(), f'unknown column {self.target_column}'
+        assert self.high_wall is not None and self.low_wall is not None, f"Sigma3Transformer.fit has not been called."
+        new_df = X.copy()
+        new_df[self.target_column] = new_df[self.target_column].clip(lower=self.low_wall, upper=self.high_wall)
+        new_df = new_df.reset_index(drop=True)
+        return new_df
+    
+    def fit_transform(self, X: pd.DataFrame, y=None):
+        """
+        Compute the high and low walls for 3-sigma
+        clipping and apply the transformation to the specified column.
+
+        Parameters
+        ----------
+        X : pd.DataFrame
+            The input DataFrame.
+        y : None
+            Not used.
+
+        Returns
+        -------
+        pd.DataFrame
+            A new DataFrame with the specified column
+            clipped.
+        """
+        self.fit(X, y)
+        return self.transform(X, y)
+
+class CustomTukeyTransformer(BaseEstimator, TransformerMixin):
+    """
+    A transformer that applies Tukey's fences (inner or outer) to a specified column in a pandas DataFrame.
+
+    This transformer follows the scikit-learn transformer interface and can be used in a scikit-learn pipeline.
+    It clips values in the target column based on Tukey's inner or outer fences.
+
+    Parameters
+    ----------
+    target_column : Hashable
+        The name of the column to apply Tukey's fences on.
+    fence : Literal['inner', 'outer'], default='outer'
+        Determines whether to use the inner fence (1.5 * IQR) or the outer fence (3.0 * IQR).
+
+    Attributes
+    ----------
+    inner_low : Optional[float]
+        The lower bound for clipping using the inner fence (Q1 - 1.5 * IQR).
+    outer_low : Optional[float]
+        The lower bound for clipping using the outer fence (Q1 - 3.0 * IQR).
+    inner_high : Optional[float]
+        The upper bound for clipping using the inner fence (Q3 + 1.5 * IQR).
+    outer_high : Optional[float]
+        The upper bound for clipping using the outer fence (Q3 + 3.0 * IQR).
+
+    Examples
+    --------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'values': [10, 15, 14, 20, 100, 5, 7]})
+    >>> tukey_transformer = CustomTukeyTransformer(target_column='values', fence='inner')
+    >>> transformed_df = tukey_transformer.fit_transform(df)
+    >>> transformed_df
+    """
+    def __init__(self, target_column: str, fence: Literal['inner', 'outer'] = 'outer'):
+        self.target_column = target_column
+        self.fence = fence
+        self.inner_low = None
+        self.inner_high = None
+        self.outer_low = None
+        self.outer_high = None
+
+    def fit(self, X: pd.DataFrame, y=None):
+        """
+        Compute the inner and outer walls for Tukey'
+        fences.
+
+        Parameters
+        ----------
+        X : pd.DataFrame
+            The input DataFrame.
+        y : None
+            Not used.
+
+        Returns
+        -------
+        self : CustomTukeyTransformer
+            The fitted transformer.
+        """
+        assert isinstance(X, pd.core.frame.DataFrame), f'expected Dataframe but got {type(X)} instead.'
+        assert self.target_column in X.columns.to_list(), f'unknown column {self.target_column}'
+        q1 = X[self.target_column].quantile(0.25)
+        q3 = X[self.target_column].quantile(0.75)
+        iqr = q3-q1
+        if self.fence == 'inner':
+            self.inner_low = q1-1.5*iqr
+            self.inner_high = q3+1.5*iqr
+            return self
+        elif self.fence == 'outer':
+            self.outer_low = q1-3*iqr
+            self.outer_high = q3+3*iqr
+            return self
+        else:
+            raise ValueError(f'unknown fence {self.fence}')
+    
+    def transform(self, X: pd.DataFrame, y=None):
+        """
+        Apply Tukey fences to the specified column in the input DataFrame.
+
+        Parameters
+        ----------
+        X : pd.DataFrame
+            The input DataFrame.
+        y : None
+            Not used.
+
+        Returns
+        -------
+        pd.DataFrame
+            A new DataFrame with the specified column clipped.
+        """
+        assert isinstance(X, pd.core.frame.DataFrame), f'expected Dataframe but got {type(X)} instead.'
+        assert self.target_column in X.columns.to_list(), f'unknown column {self.target_column}'
+        if self.fence == 'inner':
+            assert self.inner_low is not None and self.inner_high is not None, f"TukeyTransformer.fit has not been called."
+            new_df = X.copy()
+            new_df[self.target_column] = new_df[self.target_column].clip(lower=self.inner_low, upper=self.inner_high)
+            new_df = new_df.reset_index(drop=True)
+            return new_df
+        elif self.fence == 'outer':
+            assert self.outer_low is not None and self.outer_high is not None, f"TukeyTransformer.fit has not been called."
+            new_df = X.copy()
+            new_df[self.target_column] = new_df[self.target_column].clip(lower=self.outer_low, upper=self.outer_high)
+            new_df = new_df.reset_index(drop=True)
+            return new_df
+        else:
+            raise ValueError(f'unknown fence {self.fence}')
+
+    def fit_transform(self, X: pd.DataFrame, y=None):
+        """
+        Compute the inner and outer walls for Tukey
+        fences and apply the transformation to the specified column.
+
+        Parameters
+        ----------
+        X : pd.DataFrame
+            The input DataFrame.
+        y : None
+            Not used.
+
+        Returns
+        -------
+        pd.DataFrame
+            A new DataFrame with the specified column
+            clipped.
+        """
+        self.fit(X, y)
+        return self.transform(X, y)

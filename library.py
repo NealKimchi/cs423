@@ -676,7 +676,7 @@ titanic_transformer = Pipeline(steps=[
     #add your new ohe step below
     ('joined', CustomOHETransformer('Joined')),
     ('age', CustomRobustTransformer('Age')),
-    ('robust time spent', CustomRobustTransformer('Fare')),
+    ('fare', CustomRobustTransformer('Fare')),
     ], verbose=True)
 
 cols_to_keep = ['Gender', 'Experience Level', 'Time Spent', 'OS', 'ISP', 'Age']

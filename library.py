@@ -383,24 +383,6 @@ class CustomDropColumnsTransformer(BaseEstimator, TransformerMixin):
       self.fit(X)
       result: pd.core.frame.DataFrame = self.transform(X)
       return result
-        
-titanic_transformer = Pipeline(steps=[
-    ('gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
-    ('class', CustomMappingTransformer('Class', {'Crew': 0, 'C3': 1, 'C2': 2, 'C1': 3})),
-    #add your new ohe step below
-    ('joined', CustomOHETransformer('Joined'))
-
-    ], verbose=True)
-
-cols_to_keep = ['Gender', 'Experience Level', 'Time Spent', 'OS', 'ISP', 'Age']
-customer_transformer = Pipeline(steps=[
-    ('drop', CustomDropColumnsTransformer(column_list=cols_to_keep, action='keep')),
-    ('gender', CustomMappingTransformer('Gender', {'Female': 0, 'Male': 1})),
-    ('experience', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high': 2})),
-    ('os', CustomOHETransformer('OS')),
-    ('isp', CustomOHETransformer('ISP')),
-    ('time spent', CustomTukeyTransformer('Time Spent', 'inner')),
-], verbose=True)
 
 class CustomSigma3Transformer(BaseEstimator, TransformerMixin):
     """
@@ -623,3 +605,21 @@ class CustomTukeyTransformer(BaseEstimator, TransformerMixin):
         """
         self.fit(X, y)
         return self.transform(X, y)
+
+titanic_transformer = Pipeline(steps=[
+    ('gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
+    ('class', CustomMappingTransformer('Class', {'Crew': 0, 'C3': 1, 'C2': 2, 'C1': 3})),
+    #add your new ohe step below
+    ('joined', CustomOHETransformer('Joined'))
+
+    ], verbose=True)
+
+cols_to_keep = ['Gender', 'Experience Level', 'Time Spent', 'OS', 'ISP', 'Age']
+customer_transformer = Pipeline(steps=[
+    ('drop', CustomDropColumnsTransformer(column_list=cols_to_keep, action='keep')),
+    ('gender', CustomMappingTransformer('Gender', {'Female': 0, 'Male': 1})),
+    ('experience', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high': 2})),
+    ('os', CustomOHETransformer('OS')),
+    ('isp', CustomOHETransformer('ISP')),
+    ('time spent', CustomTukeyTransformer('Time Spent', 'inner')),
+], verbose=True)

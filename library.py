@@ -606,6 +606,70 @@ class CustomTukeyTransformer(BaseEstimator, TransformerMixin):
         self.fit(X, y)
         return self.transform(X, y)
 
+class CustomRobustTransformer(BaseEstimator, TransformerMixin):
+  """Applies robust scaling to a specified column in a pandas DataFrame.
+    This transformer calculates the interquartile range (IQR) and median
+    during the `fit` method and then uses these values to scale the
+    target column in the `transform` method.
+
+    Parameters
+    ----------
+    column : str
+        The name of the column to be scaled.
+
+    Attributes
+    ----------
+    target_column : str
+        The name of the column to be scaled.
+    iqr : float
+        The interquartile range of the target column.
+    med : float
+        The median of the target column.
+  """
+  def __init__(self, column):
+    self.target_column = column
+  def fit(self, X, y=None):
+    """Calculates the IQR and median for the target column.
+
+    Parameters
+    ----------
+    X : pandas DataFrame
+        The input DataFrame.
+    y : None
+        Ignored. This is for compatibility with sklearn's API.
+
+    Returns
+    -------
+    self : object
+        Returns self.
+    """
+    if self.target_column not in X.columns:
+      raise AssertionError(f'CustomRobustTransformer.fit unrecognizable column {self.target_column}.')
+    self.iqr = X[self.target_column].quantile(0.75) - X[self.target_column].quantile(0.25)
+    self.med = X[self.target_column].median()
+    return self
+
+  def transform(self, X):
+    """Applies robust scaling to the target column.
+
+    Parameters
+    ----------
+    X : pandas DataFrame
+        The input DataFrame.
+
+    Returns
+    -------
+    pandas DataFrame
+        The transformed DataFrame with the target column scaled.
+    """
+    if not hasattr(self, 'iqr'):
+      raise AssertionError('NotFittedError: This CustomRobustTransformer instance is not fitted yet. Call "fit" with appropriate arguments before using this estimator.')
+    if self.iqr==0 or self.med==0: #don't scale if fit gave 0 values. This can happen with binary columns.
+      return X
+    X_ = X.copy()  #make copy so we don't change original table
+    X_[self.target_column] = (X_[self.target_column] - self.med) / self.iqr
+    return X_
+
 titanic_transformer = Pipeline(steps=[
     ('gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
     ('class', CustomMappingTransformer('Class', {'Crew': 0, 'C3': 1, 'C2': 2, 'C1': 3})),

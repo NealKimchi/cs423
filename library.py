@@ -670,6 +670,104 @@ class CustomRobustTransformer(BaseEstimator, TransformerMixin):
     X_[self.target_column] = (X_[self.target_column] - self.med) / self.iqr
     return X_
 
+class CustomKNNTransformer(BaseEstimator, TransformerMixin):
+  """Imputes missing values using KNN.
+
+  This transformer wraps the KNNImputer from scikit-learn and hard-codes
+  add_indicator to be False. It also ensures that the input and output
+  are pandas DataFrames.
+
+  Parameters
+  ----------
+  n_neighbors : int, default=5
+      Number of neighboring samples to use for imputation.
+  weights : {'uniform', 'distance'}, default='uniform'
+      Weight function used in prediction. Possible values:
+      "uniform" : uniform weights. All points in each neighborhood
+      are weighted equally.
+      "distance" : weight points by the inverse of their distance.
+      in this case, closer neighbors of a query point will have a
+      greater influence than neighbors which are further away.
+  """
+  #your code below
+  def __init__(self, n_neighbors: int = 5, weights: Literal['uniform', 'distance'] = 'uniform') -> None:
+    """
+    Initialize the CustomKNNTransformer.
+
+    Parameters
+    ----------
+    n_neighbors : int, default=5
+        Number of neighbors to use.
+
+    weights : {'uniform', 'distance'}, default='uniform'
+        Weight function to use.
+    """
+    assert isinstance(n_neighbors, int) and n_neighbors > 0, f"{self.__class__.__name__} expects n_neighbors to be a positive integer."
+    assert weights in ['uniform', 'distance'], f"{self.__class__.__name__} expects weights to be 'uniform' or 'distance'."
+
+    self.n_neighbors = n_neighbors
+    self.weights = weights
+    self.imputer = KNNImputer(n_neighbors=self.n_neighbors, weights=self.weights, add_indicator=False)
+
+  def fit(self, X: pd.DataFrame, y: Optional[Iterable] = None) -> Self:
+        """
+        Fit the KNN imputer on the input DataFrame.
+
+        Parameters
+        ----------
+        X : pandas.DataFrame
+            The input data to fit.
+
+        y : Ignored
+            Exists only for compatibility with sklearn pipelines.
+
+        Returns
+        -------
+        self : instance of CustomKNNTransformer
+            Returns self to allow method chaining.
+        """
+        assert isinstance(X, pd.DataFrame), f"{self.__class__.__name__}.fit expected DataFrame but got {type(X)} instead."
+        self.imputer.fit(X)
+        return self
+
+  def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Impute missing values in the input DataFrame using the fitted KNN imputer.
+
+        Parameters
+        ----------
+        X : pandas.DataFrame
+            The input data to transform.
+
+        Returns
+        -------
+        pandas.DataFrame
+            The imputed DataFrame.
+        """
+        assert isinstance(X, pd.DataFrame), f"{self.__class__.__name__}.transform expected DataFrame but got {type(X)} instead."
+        X_imputed = self.imputer.transform(X)
+        X_out = pd.DataFrame(X_imputed, columns=X.columns, index=X.index)
+        return X_out
+
+  def fit_transform(self, X: pd.DataFrame, y: Optional[Iterable] = None) -> pd.DataFrame:
+      """
+      Fit the KNN imputer and transform the input DataFrame.
+
+      Parameters
+      ----------
+      X : pandas.DataFrame
+          The input data to fit and transform.
+
+      y : Ignored
+          Exists only for compatibility with sklearn pipelines.
+
+      Returns
+      -------
+      pandas.DataFrame
+          The imputed DataFrame.
+      """
+      return self.fit(X, y).transform(X)
+
 titanic_transformer = Pipeline(steps=[
     ('map_gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
     ('map_class', CustomMappingTransformer('Class', {'Crew': 0, 'C3': 1, 'C2': 2, 'C1': 3})),
@@ -680,14 +778,31 @@ titanic_transformer = Pipeline(steps=[
     ('scale_fare', CustomRobustTransformer('Fare')),
 ], verbose=True)
 
-cols_to_keep = ['Gender', 'Experience Level', 'Time Spent', 'OS', 'ISP', 'Age']
+#Build pipeline and include scalers from last chapter and imputer from this
 customer_transformer = Pipeline(steps=[
-    ('drop', CustomDropColumnsTransformer(column_list=cols_to_keep, action='keep')),
-    ('gender', CustomMappingTransformer('Gender', {'Female': 0, 'Male': 1})),
-    ('experience', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high': 2})),
-    ('os', CustomOHETransformer('OS')),
-    ('isp', CustomOHETransformer('ISP')),
-    ('time spent', CustomTukeyTransformer('Time Spent', 'inner')),
-    ('age', CustomRobustTransformer('Age')),
-    ('robust time spent', CustomRobustTransformer('Time Spent')),
-])
+    # First, drop the ID column as it shouldn't be in the final output
+    ('drop_id', CustomDropColumnsTransformer(['ID'], 'drop')),
+    # Map Gender (Male: 0, Female: 1)
+    ('gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
+    # Map Experience Level (low: 0, medium: 1, high: 2)
+    ('xp level', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high': 2})),
+    # Apply Tukey transformation to Time Spent to handle outliers
+    ('time spent', CustomTukeyTransformer('Time Spent', 'outer')),
+    # Apply Tukey transformation to Age to handle outliers
+    ('age tukey', CustomTukeyTransformer('Age', 'outer')),
+    # Scale Time Spent using RobustScaler
+    ('time spent robust', CustomRobustTransformer('Time Spent')),
+    # Scale Age using RobustScaler
+    ('age robust', CustomRobustTransformer('Age')),
+    # One-hot encode OS
+    ('os ohe', CustomOHETransformer(target_column='OS')),
+    # One-hot encode ISP
+    ('isp ohe', CustomOHETransformer(target_column='ISP')),
+    # Impute any missing values using KNN
+    ('impute', CustomKNNTransformer(n_neighbors=5, weights='uniform')),
+    # Make sure columns are in the correct order (Gender, Experience Level, Time Spent, Age, OS_Android, OS_iOS, ISP_AT&T, ISP_Cox, ISP_HughesNet, ISP_Xfinity)
+    ('keep_columns', CustomDropColumnsTransformer(
+        ['Gender', 'Experience Level', 'Time Spent', 'Age', 'OS_Android', 'OS_iOS', 'ISP_AT&T', 'ISP_Cox', 'ISP_HughesNet', 'ISP_Xfinity'],
+        'keep')
+    ),], verbose=True)
+

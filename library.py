@@ -622,4 +622,6 @@ customer_transformer = Pipeline(steps=[
     ('os', CustomOHETransformer('OS')),
     ('isp', CustomOHETransformer('ISP')),
     ('time spent', CustomTukeyTransformer('Time Spent', 'inner')),
-], verbose=True)
+    ('age', CustomRobustTransformer('Age')),
+    ('robust time spent', CustomRobustTransformer('Time Spent')),
+])

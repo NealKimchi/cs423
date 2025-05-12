@@ -14,6 +14,8 @@ from sklearn.metrics import f1_score
 from sklearn.neighbors import KNeighborsClassifier  
 from sklearn.model_selection import train_test_split
 
+
+
 titanic_variance_based_split = 107
 customer_variance_based_split = 113
 
@@ -779,10 +781,10 @@ class CustomTargetTransformer(BaseEstimator, TransformerMixin):
         assert isinstance(y, Iterable), f'{self.__class__.__name__}.fit expected Iterable but got {type(y)} instead.'
         assert len(X) == len(y), f'{self.__class__.__name__}.fit X and y must be same length but got {len(X)} and {len(y)} instead.'
 
-        #Create new df with just col and target - enables use of pandas methods below
-        X_ = X[[self.col]]
+        # Create new df with just col and target - make a copy to avoid warnings
+        X_ = X[[self.col]].copy()  # Added .copy() here
         target = self.col+'_target_'
-        X_[target] = y
+        X_.loc[:, target] = y
 
         # Calculate global mean
         self.global_mean_ = X_[target].mean()
@@ -911,6 +913,8 @@ def find_random_state(
     return rs_value, Var
 
 
+
+
 titanic_transformer = Pipeline(steps=[
     ('map_gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
     ('map_class', CustomMappingTransformer('Class', {'Crew': 0, 'C3': 1, 'C2': 2, 'C1': 3})),
@@ -929,9 +933,65 @@ customer_transformer = Pipeline(steps=[
     ('target_isp', CustomTargetTransformer(col='ISP')),
     ('map_level', CustomMappingTransformer('Experience Level', {'low': 0, 'medium': 1, 'high':2})),
     ('map_gender', CustomMappingTransformer('Gender', {'Male': 0, 'Female': 1})),
-    ('tukey_age', CustomTukeyTransformer('Age', 'inner')),  #from chapter 4
-    ('tukey_time spent', CustomTukeyTransformer('Time Spent', 'inner')),  #from chapter 4
-    ('scale_age', CustomRobustTransformer(target_column='Age')), #from 5
-    ('scale_time spent', CustomRobustTransformer(target_column='Time Spent')), #from 5
+    ('tukey_age', CustomTukeyTransformer('Age', 'inner')),  
+    ('tukey_time_spent', CustomTukeyTransformer('Time Spent', 'inner')),  
+    ('scale_age', CustomRobustTransformer(target_column='Age')), 
+    ('scale_time_spent', CustomRobustTransformer(target_column='Time Spent')), 
     ('impute', CustomKNNTransformer(n_neighbors=5)),
-    ], verbose=True)
+], verbose=True)
+
+
+
+
+
+def dataset_setup(original_table, label_column_name: str, the_transformer, rs, ts=.2):
+    """
+    Set up datasets for machine learning by splitting, transforming, and converting to numpy.
+
+    Parameters:
+    -----------
+    original_table : pandas.DataFrame
+        The original dataset that includes the label column
+    label_column_name : str
+        The name of the column containing the target labels
+    the_transformer : sklearn transformer
+        The transformer to apply to the features
+    rs : int
+        Random state for train-test split
+    ts : float, default=0.2
+        Test size for train-test split
+
+    Returns:
+    --------
+    tuple of numpy arrays:
+        x_train_numpy, x_test_numpy, y_train_numpy, y_test_numpy
+    """
+    # Split into features and labels
+    features = original_table.drop(columns=label_column_name)
+    labels = original_table[label_column_name].to_list()
+
+    # Perform train-test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        features, labels, test_size=ts, shuffle=True,
+        random_state=rs, stratify=labels
+    )
+
+    # Transform the data
+    X_train_transformed = the_transformer.fit_transform(X_train, y_train)
+    X_test_transformed = the_transformer.transform(X_test)
+
+    # Convert to numpy arrays
+    X_train_numpy = X_train_transformed.to_numpy()
+    X_test_numpy = X_test_transformed.to_numpy()
+    y_train_numpy = np.array(y_train)
+    y_test_numpy = np.array(y_test)
+
+    return X_train_numpy, X_test_numpy, y_train_numpy, y_test_numpy
+
+
+def titanic_setup(titanic_table, transformer=titanic_transformer, rs=titanic_variance_based_split, ts=.2):
+  return dataset_setup(titanic_table, 'Survived', transformer, rs=rs, ts=ts)
+
+
+def customer_setup(customer_table, transformer=customer_transformer, rs=customer_variance_based_split, ts=.2):
+  return dataset_setup(customer_table, 'Rating', transformer, rs=rs, ts=ts)
